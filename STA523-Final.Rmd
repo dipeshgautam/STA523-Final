@@ -1,0 +1,310 @@
+---
+title: "STA523 Final Exam"
+author: "Dipesh Gautam"
+date: "12/10/2014"
+output: html_document
+---
+
+
+```{r install.required.pacakges, echo=FALSE}
+## Prof. Rundel's function to check/install and load the required packages
+check_packages = function(names)
+{
+    for(name in names)
+    {
+        if (!(name %in% installed.packages()))
+            install.packages(name, repos="http://cran.us.r-project.org")
+    
+        library(name, character.only=TRUE)
+    }
+}
+suppressMessages(check_packages(c("httr", "rjson", "stringr", "jpeg", "graphics", "XML", "rvest", "magrittr", "Rcpp", "testthat", "plyr", "Matrix", "xtable", "microbenchmark")))
+```
+
+## 1. Sparse Matrices
+### Task 1
+For task 1 in problem 1, we had to recreate the two given matrices, M1 and M2, in both the dense and sparce representations. To get the dense representation, we used rbind() and cbind() function to combine all the pieces together. e.g. for M1, we first created five matrices represented by each column in the representation given in the question and then combined the five matrices to get the complete matrix.
+To create the sparse representation of the given matrices, we used sparseMatrix() function in Matrix pacakge. We had to clearly and carefully define i and j (vectors containing the row and column number respectively of the non-zero points in the matrix). First we determined the row number of each non-zero entires and then we determined the column number for corresponding to each of those row numbers to get both i and j.
+Next we used image() function to check if the matrices created have correct structures. We found that all 4 matrices had the expected structure according to the specification provided.
+Next we looked at the size of the matrices for both representation and found that sparse representation is smaller for M1 but bigger for M2. This can be explained by the small size of M2 whose dimensions are [100,1]. 
+```{r Sparse Matrices, results='asis'}
+## Generate 
+dense.M1 = matrix(cbind(rbind(matrix(rep(1,25), ncol = 5), 
+                              matrix(rep(0,80*5), ncol =5),
+                              matrix(rep(1,50), ncol = 5),
+                              matrix(rep(0,25), ncol = 5)
+                              ),
+                        rbind(matrix(rep(0,50), ncol = 10),
+                              matrix(rep(1,100), ncol = 10),
+                              matrix(rep(0, 85*10), ncol =10)
+                              ),
+                        rbind(matrix(rep(0,100*70), ncol = 70)
+                              ),
+                        rbind(matrix(rep(1, 5*10), ncol =10),
+                              matrix(rep(0, 80*10), ncol =10),
+                              matrix(rep(1, 100), ncol =10),
+                              matrix(rep(0, 50), ncol =10)
+                              ),
+                        rbind(matrix(rep(0, 5*95), ncol = 5),
+                              matrix(rep(1,25), ncol =5)
+                              )
+                        ), nrow=100)
+dense.M2 = matrix(c(rep(1,3), rep(0, 10), rep(1, 7), rep(0, 30), rep(1,7), rep(0,42), rep(1,1)), ncol=1)
+
+## Sparse matrices
+# M1
+i1 = sort(c(rep(1:5,15),rep(6:15,10), rep(86:95, 15), rep(96:100,5)))
+j1 = c(rep(c(1:5,86:95),5),rep(6:15,10), rep(c(1:5, 86:95),10), rep(96:100,5))
+sparse.M1 = sparseMatrix(i1, j1, x = 1)
+
+# M2
+i2 = c(1:3, 14:20, 51:57, 100) 
+j2 = c(rep(1,18))
+sparse.M2 = sparseMatrix(i2 , j2 , x=1)
+
+# par(mfrow = c(2,2))
+image(Matrix(dense.M1))
+image(sparse.M1)
+image(Matrix(dense.M2))
+image(sparse.M2)
+
+sizes = matrix(rep(0,4), nrow = 2)
+sizes[1,1] = object.size(dense.M1)
+sizes[1,2] = object.size(dense.M2)
+sizes[2,1] = object.size(sparse.M1)
+sizes[2,2] = object.size(sparse.M2)
+
+colnames(sizes) = c("M1", "M2")
+rownames(sizes) = c("dense", "sparse")
+
+sizes.xtable = xtable(sizes,  caption = "Size of the matrices")
+display(sizes.xtable)= c("d","d", "d")
+print(sizes.xtable, type="html",caption.placement = "top")
+```
+
+### Task 2
+Next task was to compare the time required to perform some basic function under the two representations.
+We used microbenchmark() function from microbenchmark package to compare the pair of operations under the representation. Following the instructions, results are based on 20 evaluations. The results in microseconds are shown in the table below. We see that operations using dense representation is faster that those under sparse representation except for M1.M1 matrix product. This is likely due to small size and lack of complexity of the matrices provided.
+```{r Sparse Matrices2, results='asis'}
+runtime = matrix(rep(0,8), nrow = 2)
+colnames(runtime) = c("M2xM2", "M1.M2", "M2.M2", "chol(M1 + diag(2)")
+rownames(runtime) = c("dense", "sparse")
+# Cross product M2
+a = microbenchmark(crossprod(dense.M2), crossprod(sparse.M2), times = 20)
+runtime[1,1] = mean(a$time[which(a$expr=="crossprod(dense.M2)")])/1000
+runtime[2,1] = mean(a$time[which(a$expr=="crossprod(sparse.M2)")])/1000
+
+# Matrix product M1.M2
+a = microbenchmark(dense.M1%*%dense.M2,sparse.M1%*%sparse.M2, times =20)
+runtime[1,2] = mean(a$time[which(a$expr=="dense.M1 %*% dense.M2")])/1000
+runtime[2,2] = mean(a$time[which(a$expr=="sparse.M1 %*% sparse.M2")])/1000
+
+# Matrix product M1.M1
+a = microbenchmark(dense.M1%*%dense.M1,sparse.M1%*%sparse.M1, times =20)
+runtime[1,3] = mean(a$time[which(a$expr=="dense.M1 %*% dense.M1")])/1000
+runtime[2,3] = mean(a$time[which(a$expr=="sparse.M1 %*% sparse.M1")])/1000
+
+## Cholesky Decomposition
+a = microbenchmark(chol(dense.M1+2*diag(100)), chol(sparse.M1+Diagonal(100,2)), times = 20)
+runtime[1,4] = mean(a$time[which(a$expr=="chol(dense.M1 + 2 * diag(100))")])/1000
+runtime[2,4] = mean(a$time[which(a$expr=="chol(sparse.M1 + Diagonal(100, 2))")])/1000
+
+
+runtime.xtable = xtable(runtime, caption ="Average runtime for different tasks in microseconds")
+display(runtime.xtable)= c("d","d", "d", "d", "d")
+print(runtime.xtable, type="html", caption.placement = "top")
+
+```
+
+
+## 2. Shuffling
+### Task 1
+First we checked if the input was a vector or not and returned error if it was not. We also changed the input to atomic vector if they were in other form to make computation easier. To shuffle the given vector, we fisrt randomly generated 'n' numbers using runif() function, where 'n' is the length of the input vector. Then we assigned each randomly generated number to each element of input vector. Next we sorted the randomly generated numbers in ascending order, thereby sorting the vector in ascending order of their new shuffled position. This function returns the shuffled vector as a result. It will contain exactly the same elements of the input vector which reordered randomly.
+```{r Shuffling1}
+shuffle = function(v)
+  {
+  stopifnot(is.vector(v)) # check if the input is a vector
+  ## if it's a list, change it to atomic vector
+  if(typeof(v)=="list"){
+    v = unlist(v)
+    }
+  n = length(v)
+  ## randomly generate n numbers between 0 to 5 to give define a new order for elements
+  order = runif(n, 0, 5)
+  
+  ## Attach each random number to one of the elements and sort by the random number to shuffle the vector
+  df = data.frame(vector = v, order = order)
+  df1 = arrange(df, order)
+  return(df1$vector)
+  
+  }
+
+```
+### Task 2
+Our next task was to determine whether the random shuffling algorithm of part 1 is unbiased or not. We wanted a graphical representation of the probability of any element ending up in certain position given a starting position. For an unbiased algorithm, the probability should be equal for each combination of edges in a graph.
+We wanted to test if the algorithm was biased or not for different length of vectors. We have done analysis with vectors of length 3, 10 and 20 below. To accomplish this, first we wrote a function that generates a graph object given the length of vector and number of random shuffles to generate. We chose number of shuffles to be 1000 times the length of the vector. For each random sample, we looked at the starting and end position of each element of the vector. We always started with the same initial vector so, the start position was always the same. For each shuffle we determined the final position and updated the count of number of times the element has ended up there. After getting the count on final position for each element, we divided by total number of shuffles to get the probability of ending up at certain position. This count/probability data was stored in a mxm matrix where 'm' is the length of the vector. Then we converted the matrix into a graph object.
+
+We've plotted some sample distribution for each vector lengths explored. In the probability distributions plotted, we can see that no matter what the starting position is we always get back similar probability of ending up in a position. Moreover for any starting point, probability of ending up in any of the position is equal. This shows that the algorithm developed in part 1 is unbiased for all vector sizes.
+
+```{r Shuffling2}
+create_graph = function(n, N){
+  v = c(1:n) 
+  m = length(v)
+  to_total = matrix(rep(0,m*m), nrow=m) # total number of times an item is shuffled to another point
+  for (i in 1:N)
+    {
+    shuffled_v = shuffle(v) # each iteration gets a new shuffled vector
+    for ( j in 1:m)
+      {
+      k = which(shuffled_v==v[j]) # determine where the item j ended up
+      to_total[j,k] = to_total[j,k]+1 # if it was shuffled to location k, add that to the counter
+      }  
+    }
+  ## get the probability of ending at any location for any item (if unbiased should be equal to 1/n for all)
+  to_prob = to_total/N 
+  
+  ## Convert the matrix into a valid graph object
+  graph1 = list(list(list(), list()))
+  for (j in 1:m){
+    graph1[[j]] = list(edges = c(1:m),
+                       weights = to_prob[j,])
+    }
+  names(graph1) = v
+  return(graph1)
+  }
+# n= Length of the vector to be tested
+# N= Total number of reshuffles
+
+## We look at graph of three different lengths: 3, 10 and 20
+n = c(3,10,20)
+for (l in 1:length(n)){
+  graph = create_graph(n[l],n[l]*1000)
+  ## Plot the probability distribution for the first four elements
+  m = length(graph)
+  
+  par(mfrow=c(2,2))
+  for (j in 1:(min(4,m))){
+    plot(graph[[j]]$edges, graph[[j]]$weights, xlim=c(1,m), ylim=c(0, 1/m*1.2),
+         xlab = "Final position", ylab = "probability",
+         main = paste0("Starting position = ",j), type ="b" )
+    mtext(paste0("Vector length = ",n[l]))
+    }
+  }
+
+```
+
+
+
+## 3. Rotten Tomatoes
+To get the posters of the top10 box-office movies from rottentomtoes.com, first we used rottentomatoes's publi API to download the JSON file containing relevant info about the movies. We set the total number of movies to 10 as per the requirement of the problem but it can be easily modified to suit our needs. From the JSON object downloaded, we extrated couple of relevant informtion, namely, title of the movie and the link to the movie's rottentomatoes page. Using selector gadget, we figured out the the node containing the poster link was "#poster_link img". For each movie, we extracted actual link for the image file with that movie's poster. We used htmlParse, html_node to determine the pointer to the node and used as() function to extract the text contaied in tht node. We then extracted the links to all the movies' posters. Next we downloaded all the posters and saved them. We then plotted current top 10 movies in order with their title.
+```{r Rotten Tomatoes, fig.width=11, fig.align='center'} 
+posters = function(api_key)
+  {  
+  ## Download information using rottentomatoes API. Here instead of giving an option we set total number of movies to 10.
+  html = GET(paste0("http://api.rottentomatoes.com/api/public/v1.0/lists/movies/box_office.json?apikey=",api_key,"&limit=10"))
+  stopifnot(html$status_code==200) # check if we were able to connect to the api
+  s = content(html)
+  
+  ## Change Downloaded JSON into list and extract relevant information including title of the movie and link to the website for that movie.
+  list = fromJSON(s)
+  title=list()
+  links = list()
+  for (i in 1:10){
+    title[i] = list$movies[[i]]$title
+    links[i] = list$movies[[i]]$links$alternate
+    }
+  
+  ## Extract the poster lisk by scraping the individual website for the movie
+  poster_links = list()
+  for (k in 1:10){
+    movie1 = htmlParse(links[[k]])
+    a=movie1 %>% 
+      html_node("#poster_link img")
+    a=as(a, "character")
+    poster_links[k] = str_extract(a, "http.*.jpg")
+    }
+  poster_links = unlist(poster_links)
+  
+  ## Download the posters
+  for (j in 1:10){
+    download.file(poster_links[[j]], destfile=paste0("movie",j,".jpg"), mode="wb")
+  }
+  
+  ## Plot each poster individually with its name
+  # First 5 movies
+  plot(c(0, 100), c(0, 30), type = "n", xlab="", ylab ="", main = "Top 5 movies in order",
+       axes = F, frame.plot=F)
+  axis(1, at = c(5,30,50,70,90),  labels = title[1:5], ,  cex.axis = .8 )
+  for(j in 1:5){
+    poster_image =readJPEG(paste0("movie",j,".jpg"), native=T)
+    rasterImage(poster_image, (j-1)*20,0,(j*20),30)
+    }
+  
+  # plot the next 5
+    plot(c(0, 100), c(0, 30), type = "n",xlab ="", ylab="", main = "Movies 6-10 in order",
+         axes = F, frame.plot=F)  
+  axis(1, at = c(5,30,50,70,90),  labels = title[6:10],cex.axis = .8 )
+  for (j in 6:10){
+    poster_image =readJPEG(paste0("movie",j,".jpg"), native=T)
+    rasterImage(poster_image, (j-1-5)*20,0,(j-5)*20,30)
+    }
+  }
+
+## API key obtained from rottentomatoes
+api_key = "9dk27rqbdzmd6u9p8dgn3ns2"
+
+posters(api_key)
+
+```
+
+
+## 4. testthat
+We tested the following things for the given function:
+
+* It should not take characters as input
+- It should only take one number as input
+- fib(n) = fib(n-1) + fib(n-2) (definition of fibonacci number)
+- We tested to see if it was actually returning correct value by comparing against the 25th fibonacci number
+- It should coerce fractions and decimals into integers (according to the definition of the function)
+- It should work if given logical value by coercing logical value to 0 or 1 integer
+- It satifies the property of fibonacci number that 5x^2+4 is a perfect square for any fibonacci number
+```{r testthat}
+
+cppFunction("
+            int fib(int n) 
+            {
+            if (n < 2) 
+            return(n);
+            return( fib(n-1) + fib(n-2) );
+            }
+            ")
+
+# library(testthat)
+context("Test cppFunction")
+
+test_that("invalid_entry", {
+  input1 = "character" 
+  input2 = list(2,3)
+  
+  expect_error(fib(input1)) # cannot have character as imput
+  expect_error(fib(input2))  # can only have one integer as input
+  })
+test_that("correct_output", {
+  
+  # Check if fib(n) = fib(n-1)+fib(n-2)
+  expect_true((fib(5)-fib(4))==fib(3))
+  
+  # check the calculated value against the real value
+  expect_true(fib(25)==75025) 
+  
+   # the function coerces doubles into integers by always rounding downexpect_true(fib(5.1)==fib(5) && fib(5.9)==fib(5))
+  
+  # function coerces logical value into integers T=1
+  expect_true(fib(TRUE)==fib(1))  
+  
+  # Check if the number is fibonacci number, it has to satisfy 5x^2+4 is a perfect square.
+  expect_true(sqrt(5*fib(10)^2+4)%%1==0) 
+  })
+
+
+```
